@@ -2,10 +2,11 @@ import pandas as pd
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-import streamlit as st
+from flask import Flask, render_template, request
+
+app = Flask(__name__)
 
 # Load the CSV file
-@st.cache_data
 def load_data(file_path):
     df = pd.read_csv(file_path)
     features = ['Product Name', 'Category', 'Product Specification']
@@ -30,41 +31,37 @@ def get_recommendations(product_id, cosine_sim, df, top_n=5):
     recommendations = df.iloc[product_indices][['Uniq Id', 'Product Name', 'Category', 'Selling Price', 'Product Specification', 'Image', 'Product Url']]
     return recommendations
 
-# Streamlit app
-def main():
-    st.title("Product Search")
-    
-    # Load the CSV file (Replace 'new_dataset.csv' with your actual file path)
-    data, cosine_sim = load_data('new_dataset.csv')
-    
-    # Search bar
-    search_query = st.text_input("Search for products", value="")
-    
-    # Filter the data based on the search query
-    filtered_data = search_products(data, search_query)
-    
-    # Display the search results
-    if len(filtered_data) > 0:
-        st.subheader("Search Results")
-        for _, row in filtered_data.iterrows():
-            product_name = row['Product Name']
-            unique_id = row['Uniq Id']
-            product_url = row['Product Url']
-            
-            # Display product name, unique ID, and URL preview
-            st.write(f"Product Name: {product_name} | Unique ID: {unique_id}")
-            st.markdown(f"Product URL: [{product_url}]({product_url})")
-            
-            # Get recommendations for the product
-            recommendations = get_recommendations(unique_id, cosine_sim, data)
-            
-            # Display recommendations
-            if not recommendations.empty:
-                st.subheader("Recommended Products")
-                recommendations = recommendations.style.apply(lambda x: ["background-color: yellow" if x.name == unique_id else "" for _ in x], axis=1)
-                st.dataframe(recommendations)
-    else:
-        st.warning("No products found.")
+# Load the CSV file (Replace 'new_dataset.csv' with your actual file path)
+data, cosine_sim = load_data('new_dataset.csv')
 
-if __name__ == "__main__":
-    main()
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    if request.method == 'POST':
+        search_query = request.form['search_query']
+        filtered_data = search_products(data, search_query)
+        search_results = []
+
+        if len(filtered_data) > 0:
+            for _, row in filtered_data.iterrows():
+                product_name = row['Product Name']
+                unique_id = row['Uniq Id']
+                product_url = row['Product Url']
+
+                recommendations = get_recommendations(unique_id, cosine_sim, data)
+                recommendations_html = recommendations[['Product Name', 'Uniq Id', 'Product Url']].to_html(index=False, escape=False, render_links=True)
+
+                search_results.append({
+                    'product_name': product_name,
+                    'unique_id': unique_id,
+                    'product_url': product_url,
+                    'recommendations': recommendations_html
+                })
+        else:
+            search_results = []
+
+        return render_template('index.html', search_results=search_results, search_query=search_query)
+
+    return render_template('index.html', search_results=[], search_query='')
+
+if __name__ == '__main__':
+    app.run(debug=True)
